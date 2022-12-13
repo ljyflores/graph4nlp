@@ -10,6 +10,7 @@ import numpy as np
 import stanfordcorenlp
 import torch.utils.data
 from nltk.tokenize import word_tokenize
+from ..WikiTableQA.tableqa_utils import load_data
 
 from ..data.data import GraphData, to_batch
 from ..modules.graph_construction.base import (
@@ -18,6 +19,9 @@ from ..modules.graph_construction.base import (
 )
 from ..modules.graph_construction.constituency_graph_construction import (
     ConstituencyBasedGraphConstruction,
+)
+from ..modules.graph_construction.table_graph_construction import (
+    TableGraphConstruction,
 )
 from ..modules.graph_construction.dependency_graph_construction import (
     DependencyBasedGraphConstruction,
@@ -36,6 +40,8 @@ from ..modules.utils.tree_utils import Vocab as VocabForTree
 from ..modules.utils.tree_utils import VocabForAll
 from ..modules.utils.vocab_utils import VocabModel
 
+def tokenize_jobs(str_input):
+    return str_input.strip().split()
 
 class DataItem(object):
     def __init__(self, input_text, tokenizer):
@@ -86,6 +92,41 @@ class Text2TextDataItem_seq2seq(DataItem):
         else:
             return input_tokens, output_tokens
 
+
+class TableQADataItem(DataItem):
+    def __init__(self, question, table, answer, tokenizer, share_vocab=True):
+        super(TableQADataItem, self).__init__(question, tokenizer)
+        self.question = question
+        self.table    = table
+        self.output_text = answer
+        self.share_vocab = share_vocab
+
+    def extract(self):
+        """
+        Returns
+        -------
+        Input tokens and output tokens
+        """
+        g: GraphData = self.graph
+
+        input_tokens = []
+        for i in range(g.get_node_num()):
+            if self.tokenizer is None:
+                tokenized_token = g.node_attributes[i]["token"].strip().split(" ")
+            elif 'token' in g.node_attributes[i]:
+                tokenized_token = self.tokenizer(g.node_attributes[i]["token"])
+
+            input_tokens.extend(tokenized_token)
+
+        if self.tokenizer is None:
+            output_tokens = self.output_text.strip().split(" ")
+        else:
+            output_tokens = self.tokenizer(self.output_text)
+
+        if self.share_vocab:
+            return input_tokens + output_tokens
+        else:
+            return input_tokens, output_tokens
 
 class Text2TextDataItem(DataItem):
     def __init__(self, input_text, output_text, tokenizer, share_vocab=True):
@@ -420,12 +461,23 @@ class Dataset(torch.utils.data.Dataset):
         else:
             if self.root is None:
                 return
+            
             data = torch.load(self.processed_file_paths["data"])
-            self.train = data["train"]
-            self.test = data["test"]
-            if "val" in data.keys():
-                self.val = data["val"]
 
+            if self.graph_name=='table':
+                self.train_table = data["train_table"]
+                self.train_sql   = data["train_sql"]
+                self.test = data["test"]
+                self.dev1 = data["dev1"]
+                self.dev2 = data["dev2"]
+                self.dev3 = data["dev3"]
+                
+            else:
+                self.train = data["train"]
+                self.test  = data["test"]
+                if "val" in data.keys():
+                    self.val = data["val"]
+                
             vocab = torch.load(self.processed_file_paths["vocab"])
             self.vocab_model = vocab
 
@@ -476,23 +528,37 @@ class Dataset(torch.utils.data.Dataset):
         subset (e.g. train, val and test).
 
         """
-        if self.for_inference:
+        if self.graph_name=='table':
+            print("Using Table2Text read_raw_data")
+            if self.for_inference:
+                self.test = self.parse_file(self.root_dir, "test")
+                return
+            
+            self.train_table = self.parse_file(self.root_dir, "train")
+            self.train_sql = self.parse_file("sql", "train")
+            self.test = self.parse_file(self.root_dir, "test")
+            self.dev1 = self.parse_file(self.root_dir, "dev1")
+            self.dev2 = self.parse_file(self.root_dir, "dev2")
+            self.dev3 = self.parse_file(self.root_dir, "dev3")
+        elif self.for_inference:
             self.test = self.parse_file(self.raw_file_paths["test"])
             return
-        self.train = self.parse_file(self.raw_file_paths["train"])
-        self.test = self.parse_file(self.raw_file_paths["test"])
-        if "val" in self.raw_file_paths.keys():
-            self.val = self.parse_file(self.raw_file_paths["val"])
-        elif "val_split_ratio" in self.__dict__:
-            if self.val_split_ratio > 0:
-                new_train_length = int((1 - self.val_split_ratio) * len(self.train))
-                import random
+        else:
+            print("Not using Table2text")
+            self.train = self.parse_file(self.raw_file_paths["train"])
+            self.test = self.parse_file(self.raw_file_paths["test"])
+            if "val" in self.raw_file_paths.keys():
+                self.val = self.parse_file(self.raw_file_paths["val"])
+            elif "val_split_ratio" in self.__dict__:
+                if self.val_split_ratio > 0:
+                    new_train_length = int((1 - self.val_split_ratio) * len(self.train))
+                    import random
 
-                random.seed(self.seed)
-                old_train_set = self.train
-                random.shuffle(old_train_set)
-                self.val = old_train_set[new_train_length:]
-                self.train = old_train_set[:new_train_length]
+                    random.seed(self.seed)
+                    old_train_set = self.train
+                    random.shuffle(old_train_set)
+                    self.val = old_train_set[new_train_length:]
+                    self.train = old_train_set[:new_train_length]
 
     def process_data_items(self, data_items):
         return self._build_topology_process(
@@ -529,73 +595,92 @@ class Dataset(torch.utils.data.Dataset):
             raise ValueError("Argument: ``static_or_dynamic`` must be ``static`` or ``dynamic``")
         ret = []
         if static_or_dynamic == "static":
-            print("Connecting to stanfordcorenlp server...")
-            processor = stanfordcorenlp.StanfordCoreNLP(
-                "http://localhost", port=port, timeout=timeout
-            )
-
-            if topology_builder == IEBasedGraphConstruction:
-                props_coref = {
-                    "annotators": "tokenize, ssplit, pos, lemma, ner, parse, coref",
-                    "tokenize.options": "splitHyphenated=true,normalizeParentheses=true,"
-                    "normalizeOtherBrackets=true",
-                    "tokenize.whitespace": False,
-                    "ssplit.isOneSentence": False,
-                    "outputFormat": "json",
-                }
-                props_openie = {
-                    "annotators": "tokenize, ssplit, pos, ner, parse, openie",
-                    "tokenize.options": "splitHyphenated=true,normalizeParentheses=true,"
-                    "normalizeOtherBrackets=true",
-                    "tokenize.whitespace": False,
-                    "ssplit.isOneSentence": False,
-                    "outputFormat": "json",
-                    "openie.triple.strict": "true",
-                }
-                processor_args = [props_coref, props_openie]
-            elif topology_builder == DependencyBasedGraphConstruction or isinstance(
-                topology_builder, DependencyBasedGraphConstruction
-            ):
-                processor_args = {
-                    "annotators": "ssplit,tokenize,depparse",
-                    "tokenize.options": "splitHyphenated=false,normalizeParentheses=false,"
-                    "normalizeOtherBrackets=false",
-                    "tokenize.whitespace": True,
-                    "ssplit.isOneSentence": True,
-                    "outputFormat": "json",
-                }
-            elif topology_builder == ConstituencyBasedGraphConstruction:
-                processor_args = {
-                    "annotators": "tokenize,ssplit,pos,parse",
-                    "tokenize.options": "splitHyphenated=false,normalizeParentheses=false,"
-                    "normalizeOtherBrackets=false",
-                    "tokenize.whitespace": True,
-                    "ssplit.isOneSentence": False,
-                    "outputFormat": "json",
-                }
+            if graph_name == "table":
+                pop_idxs = []
+                for cnt, item in enumerate(data_items):
+                    if cnt % 1000 == 0:
+                        print("Port {}, processing: {} / {}".format(port, cnt, len(data_items)))
+                    try:
+                        graph = topology_builder.static_topology(
+                            raw_question=item.question,
+                            raw_table=item.table,
+                            verbose=False,
+                        )
+                        item.graph = graph
+                    except Exception as msg:
+                        pop_idxs.append(cnt)
+                        item.graph = None
+                        warnings.warn(RuntimeWarning(msg))
+                    ret.append(item)
+                ret = [x for idx, x in enumerate(ret) if idx not in pop_idxs]
             else:
-                raise NotImplementedError("unknown static graph type: {}".format(graph_name))
-            print("CoreNLP server connected.")
-            pop_idxs = []
-            for cnt, item in enumerate(data_items):
-                if cnt % 1000 == 0:
-                    print("Port {}, processing: {} / {}".format(port, cnt, len(data_items)))
-                try:
-                    graph = topology_builder.static_topology(
-                        raw_text_data=item.input_text,
-                        nlp_processor=processor,
-                        processor_args=processor_args,
-                        merge_strategy=merge_strategy,
-                        edge_strategy=edge_strategy,
-                        verbose=False,
-                    )
-                    item.graph = graph
-                except Exception as msg:
-                    pop_idxs.append(cnt)
-                    item.graph = None
-                    warnings.warn(RuntimeWarning(msg))
-                ret.append(item)
-            ret = [x for idx, x in enumerate(ret) if idx not in pop_idxs]
+                print("Connecting to stanfordcorenlp server...")
+                processor = stanfordcorenlp.StanfordCoreNLP(
+                    "http://localhost", port=port, timeout=timeout
+                )
+
+                if topology_builder == IEBasedGraphConstruction:
+                    props_coref = {
+                        "annotators": "tokenize, ssplit, pos, lemma, ner, parse, coref",
+                        "tokenize.options": "splitHyphenated=true,normalizeParentheses=true,"
+                        "normalizeOtherBrackets=true",
+                        "tokenize.whitespace": False,
+                        "ssplit.isOneSentence": False,
+                        "outputFormat": "json",
+                    }
+                    props_openie = {
+                        "annotators": "tokenize, ssplit, pos, ner, parse, openie",
+                        "tokenize.options": "splitHyphenated=true,normalizeParentheses=true,"
+                        "normalizeOtherBrackets=true",
+                        "tokenize.whitespace": False,
+                        "ssplit.isOneSentence": False,
+                        "outputFormat": "json",
+                        "openie.triple.strict": "true",
+                    }
+                    processor_args = [props_coref, props_openie]
+                elif topology_builder == DependencyBasedGraphConstruction or isinstance(
+                    topology_builder, DependencyBasedGraphConstruction
+                ):
+                    processor_args = {
+                        "annotators": "ssplit,tokenize,depparse",
+                        "tokenize.options": "splitHyphenated=false,normalizeParentheses=false,"
+                        "normalizeOtherBrackets=false",
+                        "tokenize.whitespace": True,
+                        "ssplit.isOneSentence": True,
+                        "outputFormat": "json",
+                    }
+                elif topology_builder == ConstituencyBasedGraphConstruction:
+                    processor_args = {
+                        "annotators": "tokenize,ssplit,pos,parse",
+                        "tokenize.options": "splitHyphenated=false,normalizeParentheses=false,"
+                        "normalizeOtherBrackets=false",
+                        "tokenize.whitespace": True,
+                        "ssplit.isOneSentence": False,
+                        "outputFormat": "json",
+                    }
+                else:
+                    raise NotImplementedError("unknown static graph type: {}".format(graph_name))
+                print("CoreNLP server connected.")
+                pop_idxs = []
+                for cnt, item in enumerate(data_items):
+                    if cnt % 1000 == 0:
+                        print("Port {}, processing: {} / {}".format(port, cnt, len(data_items)))
+                    try:
+                        graph = topology_builder.static_topology(
+                            raw_text_data=item.input_text,
+                            nlp_processor=processor,
+                            processor_args=processor_args,
+                            merge_strategy=merge_strategy,
+                            edge_strategy=edge_strategy,
+                            verbose=False,
+                        )
+                        item.graph = graph
+                    except Exception as msg:
+                        pop_idxs.append(cnt)
+                        item.graph = None
+                        warnings.warn(RuntimeWarning(msg))
+                    ret.append(item)
+                ret = [x for idx, x in enumerate(ret) if idx not in pop_idxs]
         elif static_or_dynamic == "dynamic":
             if graph_name == "node_emb":
                 for item in data_items:
@@ -743,9 +828,17 @@ class Dataset(torch.utils.data.Dataset):
         the vocabulary. Otherwise only the training set is used.
 
         """
-        data_for_vocab = self.train
-        if self.use_val_for_vocab:
-            data_for_vocab = self.val + data_for_vocab
+        if self.graph_name=='table':
+            data_for_vocab = self.train_table + \
+                             self.train_sql + \
+                             self.test + \
+                             self.dev1 + \
+                             self.dev2 + \
+                             self.dev3
+        else:
+            data_for_vocab = self.train
+            if self.use_val_for_vocab:
+                data_for_vocab = self.val + data_for_vocab
 
         vocab_model = VocabModel.build(
             saved_vocab_file=self.processed_file_paths["vocab"],
@@ -768,30 +861,31 @@ class Dataset(torch.utils.data.Dataset):
 
     def _process(self):
         if self.root is None:
+            print("Exit with root none")
             return
-        if all(
-            [
-                os.path.exists(processed_path)
-                for processed_path in self.processed_file_paths.values()
-            ]
-        ):
-            if "val_split_ratio" in self.__dict__:
-                UserWarning(
-                    "Loading existing processed files on disk. "
-                    "Your `val_split_ratio` might not work since the data have"
-                    "already been split."
-                )
-            return
-        if self.for_inference and all(
-            [
-                (
-                    os.path.exists(processed_path)
-                    or self.processed_file_names["data"] not in processed_path
-                )
-                for processed_path in self.processed_file_paths.values()
-            ]
-        ):
-            return
+        # if all(
+        #     [
+        #         os.path.exists(processed_path)
+        #         for processed_path in self.processed_file_paths.values()
+        #     ]
+        # ):
+        #     if "val_split_ratio" in self.__dict__:
+        #         UserWarning(
+        #             "Loading existing processed files on disk. "
+        #             "Your `val_split_ratio` might not work since the data have"
+        #             "already been split."
+        #         )
+        #     return
+        # if self.for_inference and all(
+        #     [
+        #         (
+        #             os.path.exists(processed_path)
+        #             or self.processed_file_names["data"] not in processed_path
+        #         )
+        #         for processed_path in self.processed_file_paths.values()
+        #     ]
+        # ):
+        #     return
 
         os.makedirs(self.processed_dir, exist_ok=True)
 
@@ -802,6 +896,36 @@ class Dataset(torch.utils.data.Dataset):
             self.vectorization(self.test)
             data_to_save = {"test": self.test}
             torch.save(data_to_save, self.processed_file_paths["data"])
+        
+        elif self.graph_name=='table':
+            print("table _process works!")
+            self.train_table = self.build_topology(self.train_table)
+            self.train_sql = self.build_topology(self.train_sql)
+            self.test = self.build_topology(self.test)
+            self.dev1 = self.build_topology(self.dev1)
+            self.dev2 = self.build_topology(self.dev2)
+            self.dev3 = self.build_topology(self.dev3)
+            
+            self.build_vocab()
+
+            self.vectorization(self.train_table)
+            self.vectorization(self.train_sql)
+            self.vectorization(self.test)
+            self.vectorization(self.dev1)
+            self.vectorization(self.dev2)
+            self.vectorization(self.dev3)
+
+            data_to_save = {"train_table": self.train_table, 
+                            "train_sql": self.train_sql,
+                            "test": self.test,
+                            "dev1": self.dev1,
+                            "dev2": self.dev2,
+                            "dev3": self.dev3}
+            torch.save(data_to_save, self.processed_file_paths["data"])
+
+            vocab_to_save = self.vocab_model
+            torch.save(vocab_to_save, self.processed_file_paths["vocab"])
+
         else:
             self.train = self.build_topology(self.train)
             self.test = self.build_topology(self.test)
@@ -822,6 +946,196 @@ class Dataset(torch.utils.data.Dataset):
 
             vocab_to_save = self.vocab_model
             torch.save(vocab_to_save, self.processed_file_paths["vocab"])
+
+class Table2TextDataset(Dataset):
+    """
+        The dataset for text-to-text applications.
+    Parameters
+    ----------
+    graph_name: str
+        The name of graph construction method. E.g., "dependency".
+        Note that if it is in the provided graph names (i.e., "dependency", \
+            "constituency", "ie", "node_emb", "node_emb_refine"), the following \
+            parameters are set by default and users can't modify them:
+            1. ``topology_builder``
+            2. ``static_or_dynamic``
+        If you need to customize your graph construction method, you should rename the \
+            ``graph_name`` and set the parameters above.
+    root_dir: str, default=None
+        The path of dataset.
+    topology_builder: Union[StaticGraphConstructionBase, DynamicGraphConstructionBase], default=None
+        The graph construction class.
+    topology_subdir: str
+        The directory name of processed path.
+    static_or_dynamic: str, default='static'
+        The graph type. Expected in ('static', 'dynamic')
+    dynamic_init_graph_name: str, default=None
+        The graph name of the initial graph. Expected in (None, "line", \
+            "dependency", "constituency").
+        Note that if it is in the provided graph names (i.e., "line", "dependency", \
+            "constituency"), the following parameters are set by default and users \
+            can't modify them:
+            1. ``dynamic_init_topology_builder``
+        If you need to customize your graph construction method, you should rename the \
+            ``graph_name`` and set the parameters above.
+    dynamic_init_topology_builder: StaticGraphConstructionBase
+        The graph construction class.
+    dynamic_init_topology_aux_args: None,
+        TBD.
+    """
+    def __init__(
+        self,
+        root_dir: str = None,
+        topology_subdir: str = None,
+        share_vocab: bool = True,
+        dynamic_init_graph_name: str = None,
+        dynamic_init_topology_builder: StaticGraphConstructionBase = None,
+        dynamic_init_topology_aux_args=None,
+        **kwargs,
+    ):
+        self.root_dir   = root_dir
+        self.graph_name = "table"
+        self.data_item_type = TableQADataItem
+        self.share_vocab = share_vocab
+        topology_builder = TableGraphConstruction
+        static_or_dynamic = "static"
+
+        self.static_or_dynamic = static_or_dynamic
+        print(kwargs)
+        super(Table2TextDataset, self).__init__(
+            root              = root_dir,
+            graph_name        = self.graph_name,
+            topology_builder  = topology_builder,
+            topology_subdir   = topology_subdir,
+            static_or_dynamic = static_or_dynamic,
+            share_vocab       = share_vocab,
+            dynamic_init_topology_builder  = dynamic_init_topology_builder,
+            dynamic_init_topology_aux_args = dynamic_init_topology_aux_args,
+            **kwargs,
+        )
+
+    @property
+    def raw_file_names(self):
+        """3 reserved keys: 'train', 'val' (optional), 'test'. Represent the split of dataset."""
+        return {"train": 'table', "test": 'table', "val": 'table'}
+    
+    @property
+    def processed_file_names(self):
+        """At least 3 reserved keys should be fiiled: 'vocab', 'data' and 'split_ids'."""
+        return {"vocab": "vocab.pt", "data": "data.pt"}
+
+    def download(self):
+        # raise NotImplementedError(
+        #     'This dataset is now under test and cannot be downloaded.
+        # Please prepare the raw data yourself.')
+        return
+
+    def parse_file(self, file_path, dataset) -> list:
+        """
+        Read and parse the file specified by `file_path`. The file format is
+        specified by each individual task-specific base class. Returns all
+        the indices of data items in this file w.r.t. the whole dataset.
+
+        For Text2TextDataset, the format of the input file should contain
+        lines of input, each line representing one record of data. The
+        input and output is separated by a tab(\t).
+
+        Examples
+        --------
+        input: list job use languageid0 job ( ANS ) , language ( ANS , languageid0 )
+
+        DataItem:
+            input_text="list job use languageid0",
+            output_text="job ( ANS ) , language ( ANS , languageid0 )"
+
+        Parameters
+        ----------
+        file_path: str
+            The path of the input file.
+
+        Returns
+        -------
+        list
+            The indices of data items in the file w.r.t. the whole dataset.
+        """
+        question_lst, answer_lst, table_lst = load_data(file_path, dataset)
+        table_lst = list(map(lambda x: x.fillna("").applymap(str), table_lst))
+                
+        data = [TableQADataItem(question=q, 
+                                table=t, 
+                                answer=a,
+                                tokenizer=self.tokenizer) for (q,t,a) in zip(question_lst, table_lst, answer_lst)]
+        print("Found: ", len(data), " items")
+        return data
+
+    @classmethod
+    def _vectorize_one_dataitem(cls, data_item, vocab_model, use_ie=False):
+
+        item = deepcopy(data_item)
+        graph: GraphData = item.graph
+        token_matrix = []
+        for node_idx in range(graph.get_node_num()):
+            node_token = graph.node_attributes[node_idx]["token"]
+            node_token_id = vocab_model.in_word_vocab.getIndex(node_token, use_ie)
+            graph.node_attributes[node_idx]["token_id"] = node_token_id
+
+            token_matrix.append([node_token_id])
+        if use_ie:
+            for i in range(len(token_matrix)):
+                token_matrix[i] = np.array(token_matrix[i][0])
+            token_matrix = pad_2d_vals_no_size(token_matrix)
+            token_matrix = torch.tensor(token_matrix, dtype=torch.long)
+            graph.node_features["token_id"] = token_matrix
+        else:
+            token_matrix = torch.tensor(token_matrix, dtype=torch.long)
+            graph.node_features["token_id"] = token_matrix
+
+        if use_ie and "token" in graph.edge_attributes[0].keys():
+            edge_token_matrix = []
+            for edge_idx in range(graph.get_edge_num()):
+                edge_token = graph.edge_attributes[edge_idx]["token"]
+                edge_token_id = vocab_model.in_word_vocab.getIndex(edge_token, use_ie)
+                graph.edge_attributes[edge_idx]["token_id"] = edge_token_id
+                edge_token_matrix.append([edge_token_id])
+            if use_ie:
+                for i in range(len(edge_token_matrix)):
+                    edge_token_matrix[i] = np.array(edge_token_matrix[i][0])
+                edge_token_matrix = pad_2d_vals_no_size(edge_token_matrix)
+                edge_token_matrix = torch.tensor(edge_token_matrix, dtype=torch.long)
+                graph.edge_features["token_id"] = edge_token_matrix
+
+        tgt = item.output_text
+        if isinstance(tgt, str):
+            tgt_token_id = vocab_model.out_word_vocab.to_index_sequence(tgt)
+            tgt_token_id.append(vocab_model.out_word_vocab.EOS)
+            tgt_token_id = np.array(tgt_token_id)
+            item.output_np = tgt_token_id
+        return item
+
+    def vectorization(self, data_items):
+        if self.topology_builder == IEBasedGraphConstruction:
+            use_ie = True
+        else:
+            use_ie = False
+        for idx in range(len(data_items)):
+            data_items[idx] = self._vectorize_one_dataitem(
+                data_items[idx], self.vocab_model, use_ie=use_ie
+            )
+
+    @staticmethod
+    def collate_fn(data_list: [TableQADataItem]):
+        graph_list = [item.graph for item in data_list]
+        graph_data = to_batch(graph_list)
+
+        if isinstance(data_list[0].output_text, str):  # has ground truth
+            output_numpy = [deepcopy(item.output_np) for item in data_list]
+            output_str = [deepcopy(item.output_text.lower().strip()) for item in data_list]
+            output_pad = pad_2d_vals_no_size(output_numpy)
+            tgt_seq = torch.from_numpy(output_pad).long()
+        else:
+            output_str = []
+            tgt_seq = None
+        return {"graph_data": graph_data, "tgt_seq": tgt_seq, "output_str": output_str}
 
 
 class Text2TextDataset(Dataset):
@@ -2152,6 +2466,7 @@ class KGCompletionDataset(Dataset):
 __all__ = [
     "DataItem",
     "Text2TextDataItem",
+    "TableQADataItem",
     "Text2TextDataItem_seq2seq",
     "Text2TreeDataItem",
     "Text2LabelDataItem",
@@ -2161,6 +2476,7 @@ __all__ = [
     "Text2TextDataset",
     "Text2TreeDataset",
     "Text2LabelDataset",
+    "Table2TextDataset",
     "DoubleText2TextDataset",
     "SequenceLabelingDataset",
     "KGCompletionDataItem",

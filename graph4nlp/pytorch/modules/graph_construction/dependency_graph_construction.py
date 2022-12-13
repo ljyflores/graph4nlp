@@ -127,6 +127,7 @@ class DependencyBasedGraphConstruction(StaticGraphConstructionBase):
             parsed_results.append(
                 {"graph_content": parsed_sent, "node_content": node_item, "node_num": node_id}
             )
+        print(parsed_results)
         return parsed_results
 
     @classmethod

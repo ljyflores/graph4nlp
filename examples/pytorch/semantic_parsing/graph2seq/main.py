@@ -84,7 +84,6 @@ class Jobs:
             ],
             port=self.opt["graph_construction_args"]["graph_construction_share"]["port"],
         )
-
         self.train_dataloader = DataLoader(
             dataset.train,
             batch_size=self.opt["batch_size"],

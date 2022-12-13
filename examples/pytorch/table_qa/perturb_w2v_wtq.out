@@ -1,0 +1,88 @@
+[ Using CUDA ]
+{'tokenizer': <function tokenize_jobs at 0x7fe8b90621f0>, 'pretrained_word_emb_name': '6B', 'pretrained_word_emb_url': None, 'pretrained_word_emb_cache_dir': None, 'merge_strategy': 'tailhead', 'edge_strategy': 'heterogeneous', 'seed': None, 'word_emb_size': 300, 'thread_number': 1, 'port': 9000}
+Using Table2Text read_raw_data
+Loaded WikitableQA, train
+Found:  14149  items
+Loaded SQL
+Found:  11276  items
+Loaded WikitableQA, test
+Found:  4344  items
+Loaded WikitableQA, dev1
+Found:  2831  items
+Loaded WikitableQA, dev2
+Found:  2838  items
+Loaded WikitableQA, dev3
+Found:  2838  items
+Main File: ../../../graph4nlp/pytorch/WikiTableQA/WikiTableQuestions/seq2seq_data/train_perturb.csv
+Loaded WikitableQA, perturb_test_orig
+Found:  2720  items
+Main File: ../../../graph4nlp/pytorch/WikiTableQA/WikiTableQuestions/seq2seq_data/train_perturb.csv
+Loaded WikitableQA, perturb_test_changed
+Found:  2720  items
+Main File: ../../../graph4nlp/pytorch/WikiTableQA/WikiTableQuestions/seq2seq_data/dev_perturb.csv
+Loaded WikitableQA, perturb_dev_orig
+Found:  585  items
+Main File: ../../../graph4nlp/pytorch/WikiTableQA/WikiTableQuestions/seq2seq_data/dev_perturb.csv
+Loaded WikitableQA, perturb_dev_changed
+Found:  585  items
+table _process works!
+Port 9000, processing: 0 / 14149
+Port 9000, processing: 1000 / 14149
+Port 9000, processing: 2000 / 14149
+Port 9000, processing: 3000 / 14149
+Port 9000, processing: 4000 / 14149
+Port 9000, processing: 5000 / 14149
+Port 9000, processing: 6000 / 14149
+Port 9000, processing: 7000 / 14149
+Port 9000, processing: 8000 / 14149
+Port 9000, processing: 9000 / 14149
+Port 9000, processing: 10000 / 14149
+Port 9000, processing: 11000 / 14149
+Port 9000, processing: 12000 / 14149
+Port 9000, processing: 13000 / 14149
+Port 9000, processing: 14000 / 14149
+Port 9000, processing: 0 / 11276
+Port 9000, processing: 1000 / 11276
+Port 9000, processing: 2000 / 11276
+Port 9000, processing: 3000 / 11276
+Port 9000, processing: 4000 / 11276
+Port 9000, processing: 5000 / 11276
+Port 9000, processing: 6000 / 11276
+Port 9000, processing: 7000 / 11276
+Port 9000, processing: 8000 / 11276
+Port 9000, processing: 9000 / 11276
+Port 9000, processing: 10000 / 11276
+Port 9000, processing: 11000 / 11276
+Port 9000, processing: 0 / 4344
+Port 9000, processing: 1000 / 4344
+Port 9000, processing: 2000 / 4344
+Port 9000, processing: 3000 / 4344
+Port 9000, processing: 4000 / 4344
+Port 9000, processing: 0 / 2831
+Port 9000, processing: 1000 / 2831
+Port 9000, processing: 2000 / 2831
+Port 9000, processing: 0 / 2838
+Port 9000, processing: 1000 / 2838
+Port 9000, processing: 2000 / 2838
+Port 9000, processing: 0 / 2838
+Port 9000, processing: 1000 / 2838
+Port 9000, processing: 2000 / 2838
+Port 9000, processing: 0 / 2720
+Port 9000, processing: 1000 / 2720
+Port 9000, processing: 2000 / 2720
+Port 9000, processing: 0 / 2720
+Port 9000, processing: 1000 / 2720
+Port 9000, processing: 2000 / 2720
+Port 9000, processing: 0 / 585
+Port 9000, processing: 0 / 585
+Loading pre-built vocab model stored in bothWTQ/processed/TableGraph/vocab.pt
+2022-12-09 02:32:39,108 - examples/pytorch/semantic_parsing/graph2seq/log/ggnn.txt - INFO - Evaluation accuracy in `perturb_test_orig` split: 0.095
+Done
+Done
+2022-12-09 03:03:17,153 - examples/pytorch/semantic_parsing/graph2seq/log/ggnn.txt - INFO - Evaluation accuracy in `perturb_test_changed` split: 0.020
+Done
+Done
+2022-12-09 03:09:48,623 - examples/pytorch/semantic_parsing/graph2seq/log/ggnn.txt - INFO - Evaluation accuracy in `perturb_dev_orig` split: 0.096
+Done
+Done
+2022-12-09 03:16:21,768 - examples/pytorch/semantic_parsing/graph2seq/log/ggnn.txt - INFO - Evaluation accuracy in `perturb_dev_changed` split: 0.014

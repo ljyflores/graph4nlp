@@ -13,7 +13,6 @@ from . import constants
 
 word_detector = re.compile("\w")  # noqa
 
-
 class VocabModel(object):
     """Vocab model builder.
 
@@ -90,7 +89,7 @@ class VocabModel(object):
         all_words = VocabModel.collect_vocabs(
             data_set, self.tokenizer, lower_case=lower_case, share_vocab=share_vocab
         )
-        # print('Number of words: {}'.format(len(all_words)))
+        print('Number of words: {}'.format(len(all_words)))
         if share_vocab:
             in_all_words, out_all_words = all_words, None
             if pretrained_word_emb_name is not None and target_pretrained_word_emb_name is not None:
@@ -223,12 +222,12 @@ class VocabModel(object):
         VocabModel
             Loaded Vocabulary.
         """
-        if os.path.exists(saved_vocab_file):
-            print("Loading pre-built vocab model stored in {}".format(saved_vocab_file))
-            with open(saved_vocab_file, "rb") as f:
-                vocab_model = pickle.load(f)
-
-        else:
+        try:
+            if os.path.exists(saved_vocab_file):
+                print("Loading pre-built vocab model stored in {}".format(saved_vocab_file))
+                with open(saved_vocab_file, "rb") as f:
+                    vocab_model = pickle.load(f)
+        except:
             vocab_model = cls(
                 data_set=data_set,
                 tokenizer=tokenizer,

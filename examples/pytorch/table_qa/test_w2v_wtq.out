@@ -1,0 +1,73 @@
+evaluate
+[ Using CUDA ]
+{'tokenizer': <function tokenize_jobs at 0x7fc8895d3160>, 'pretrained_word_emb_name': '6B', 'pretrained_word_emb_url': None, 'pretrained_word_emb_cache_dir': None, 'merge_strategy': 'tailhead', 'edge_strategy': 'heterogeneous', 'seed': None, 'word_emb_size': 300, 'thread_number': 1, 'port': 9000}
+Using Table2Text read_raw_data
+Loaded WikitableQA, train
+Found:  14149  items
+Loaded SQL
+Found:  11276  items
+Loaded WikitableQA, test
+Found:  4344  items
+Loaded WikitableQA, dev1
+Found:  2831  items
+Loaded WikitableQA, dev2
+Found:  2838  items
+Loaded WikitableQA, dev3
+Found:  2838  items
+table _process works!
+Port 9000, processing: 0 / 14149
+Port 9000, processing: 1000 / 14149
+Port 9000, processing: 2000 / 14149
+Port 9000, processing: 3000 / 14149
+Port 9000, processing: 4000 / 14149
+Port 9000, processing: 5000 / 14149
+Port 9000, processing: 6000 / 14149
+Port 9000, processing: 7000 / 14149
+Port 9000, processing: 8000 / 14149
+Port 9000, processing: 9000 / 14149
+Port 9000, processing: 10000 / 14149
+Port 9000, processing: 11000 / 14149
+Port 9000, processing: 12000 / 14149
+Port 9000, processing: 13000 / 14149
+Port 9000, processing: 14000 / 14149
+Port 9000, processing: 0 / 11276
+Port 9000, processing: 1000 / 11276
+Port 9000, processing: 2000 / 11276
+Port 9000, processing: 3000 / 11276
+Port 9000, processing: 4000 / 11276
+Port 9000, processing: 5000 / 11276
+Port 9000, processing: 6000 / 11276
+Port 9000, processing: 7000 / 11276
+Port 9000, processing: 8000 / 11276
+Port 9000, processing: 9000 / 11276
+Port 9000, processing: 10000 / 11276
+Port 9000, processing: 11000 / 11276
+Port 9000, processing: 0 / 4344
+Port 9000, processing: 1000 / 4344
+Port 9000, processing: 2000 / 4344
+Port 9000, processing: 3000 / 4344
+Port 9000, processing: 4000 / 4344
+Port 9000, processing: 0 / 2831
+Port 9000, processing: 1000 / 2831
+Port 9000, processing: 2000 / 2831
+Port 9000, processing: 0 / 2838
+Port 9000, processing: 1000 / 2838
+Port 9000, processing: 2000 / 2838
+Port 9000, processing: 0 / 2838
+Port 9000, processing: 1000 / 2838
+Port 9000, processing: 2000 / 2838
+2022-12-04 22:14:21,175 - examples/pytorch/semantic_parsing/graph2seq/log/ggnn.txt - INFO - Evaluation accuracy in `test` split: 0.049
+2022-12-04 22:48:39,235 - examples/pytorch/semantic_parsing/graph2seq/log/ggnn.txt - INFO - Evaluation accuracy in `dev1` split: 0.073
+2022-12-04 23:22:48,953 - examples/pytorch/semantic_parsing/graph2seq/log/ggnn.txt - INFO - Evaluation accuracy in `dev2` split: 0.087
+2022-12-04 23:57:05,102 - examples/pytorch/semantic_parsing/graph2seq/log/ggnn.txt - INFO - Evaluation accuracy in `dev3` split: 0.076
+Loading pre-built vocab model stored in bothWTQ/processed/TableGraph/vocab.pt
+loading model
+Loaded pretrained model!
+Done
+Done
+Done
+Done
+Done
+Done
+Done
+Done
