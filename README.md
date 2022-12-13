@@ -41,6 +41,56 @@
 [![Fork][forks-image]][forks-url]
 [![Star][stars-image]][stars-url]
 
+# GNNs for TableQA (CPSC 483 Final Project)
+
+<b> TLDR: </b> We propose using graphs to represent tabular input, and explore a graph2seq approach for TableQA instead of the standard seq2seq approaches. We find that our models are unable to achieve good performance on TableQA benchmarks, indicating the need for more exploration.
+    
+#### Installation Requirements
+    
+The required packages can be installed as follows
+```
+conda create --name graph4nlp_env
+conda activate graph4nlp_env
+git clone https://github.com/graph4ai/graph4nlp.git
+cd graph4nlp
+pip install torch==1.10.1+cu111 torchvision==0.11.2+cu111 torchaudio==0.10.1 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+pip install torchtext==0.11.0
+./configure # Use 11.1
+pip install --editable ./
+pip install transformers tokenizers
+conda install -c dglteam dgl-cuda11.1
+```
+
+Upon installing, kindly download the <a href="https://github.com/salesforce/WikiSQL">WikiSQL</a> and <a href="https://github.com/ppasupat/WikiTableQuestions">WikiTableQuestions</a> datasets to the `graph4nlp/pytorch/WikiTableQA` path.
+    
+The WikiSQL csvs can then be extracted using the following command:
+```
+cd graph4nlp/pytorch/WikiTableQA
+python process_wikisql_tables.py
+```
+
+#### Evaluation
+The main accuracy results can then be replicated as follows
+```
+cd examples/pytorch/table_qa
+python main.py      --mode evaluate --dataset_yaml config/test.yaml      --dataset WikiSQL
+python main.py      --mode evaluate --dataset_yaml config/test.yaml      --dataset WikiTableQuestions
+python main_bert.py --mode evaluate --dataset_yaml config/test_bert.yaml --dataset WikiSQL
+python main_bert.py --mode evaluate --dataset_yaml config/test_bert.yaml --dataset WikiTableQuestions
+```
+
+#### Perturbation
+The perturbation results for TaPEx can be replicated by running `tapex_perturb_experiments.py`, and changing the `KEY` to either `WikiTableQuestions` or `WikiSQL`.
+    
+We saved the model outputs from the perturbation experiments, and can be replicated as follows
+```
+cd examples/pytorch/table_qa
+python gnn_perturb_experiments.py --set dev --dataset w2v_wikisql
+python gnn_perturb_experiments.py --set dev --dataset w2v_wtq
+python gnn_perturb_experiments.py --set dev --dataset bert_wikisql
+python gnn_perturb_experiments.py --set dev --dataset bert_wtq
+```
+    
 # Graph4NLP
 
 ***Graph4NLP*** is an easy-to-use library for R&D at the intersection of **Deep Learning on Graphs** and
